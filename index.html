@@ -120,15 +120,12 @@
 // ======================= SOZLAMALAR =======================
 const API_URL = "https://sgzewmemzivdzwybfucb.supabase.co/functions/v1/viki";
 const OVOZ = {
-  tezlik: 0.93,     // 1 dan kichik = pastroq va yo'g'onroq ovoz
-  bas: 8,           // past chastotalarni kuchaytirish (dB)
-  aksSado: 0.22,    // aks-sado miqdori (0 = yo'q, 0.5 = ko'p)
+  tezlik: 0.9,      // 1 dan kichik = pastroq va yo'g'onroq ovoz
+  bas: 10,          // past chastotalarni kuchaytirish (dB)
+  aksSado: 0.25,    // aks-sado miqdori (0 = yo'q, 0.5 = ko'p)
 };
 const SALOM = "Assalomu alaykum, Islombek.";
-// "Viki" so'zini tanish (rus va ingliz tanib olish tizimlari uchun)
-const UYGOTISH_SOZI = /(в[иы]к[иы])|(v[iy]c?k(y|i|ie|ey|ee))|(wi(ki|kki|cky))/i;
-const TANISH_TILI = "ru-RU";
-const JIMLIK_MS = 1200;   // gapirib bo'lgach shuncha jimlikdan keyin yuboriladi
+const JIMLIK_MS = 900;    // gapirib bo'lgach shuncha jimlikdan keyin yuboriladi
 
 // ======================= YORDAMCHILAR =======================
 const $ = (id) => document.getElementById(id);
@@ -161,7 +158,8 @@ function setHolat(h) {
   $("mik").classList.toggle("band", h === "oylash" || h === "gapirish" || h === "uygonish");
   $("panel").classList.toggle("yashirin", h === "uyqu" || h === "uygonish");
   $("uygot").hidden = h !== "uyqu";
-  if (h === "kutish") setTimeout(startWake, 250); else stopWake();
+  if (h === "kutish") micOch();
+  else if (h !== "tinglash") micYop();   // gapirayotganda mikrofon yopiq: ovoz baland chiqadi, o'zini eshitmaydi
 }
 
 // ======================= GRAFIKA =======================
@@ -481,7 +479,7 @@ function pcmToBuffer(b64) {
   }
   return ab;
 }
-function play(b64, text) {
+function play(b64, text, from = 0) {
   return new Promise((resolve) => {
     initAudio();
     const src = ac.createBufferSource();
@@ -490,13 +488,13 @@ function play(b64, text) {
     src.connect(outInput);
     const dur = src.buffer.duration / OVOZ.tezlik;
     setHolat("gapirish");
-    typewriter(text, dur);
+    typewriter(text, dur, undefined, from);
     src.onended = () => { playing = null; resolve(); };
     playing = src; src.start();
   });
 }
 let twTimer;
-function typewriter(text, dur, men) {
+function typewriter(text, dur, men, from = 0) {
   clearInterval(twTimer);
   const el = $("subtitr");
   const head = men ? `<span class="men">${esc(men)}</span>` : (el.querySelector(".men")?.outerHTML || "");
@@ -504,58 +502,95 @@ function typewriter(text, dur, men) {
   const t0 = performance.now();
   twTimer = setInterval(() => {
     const k = clamp((performance.now() - t0) / (dur * 1000 * 0.92), 0, 1);
-    el.innerHTML = head + esc(text.slice(0, Math.ceil(text.length * k)));
+    el.innerHTML = head + esc(text.slice(0, from + Math.ceil((text.length - from) * k)));
     if (k >= 1) clearInterval(twTimer);
   }, 40);
 }
 const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
-// ----- mikrofon (WAV 16 kHz) -----
-let micStream, micNode, micChunks = [], micTimer;
-async function startMic() {
-  if (micNode) return;
+// ----- doimiy tinglash: "Viki" so'zi va buyruqlar -----
+let micStream = null, micNode = null;
+let seg = null;            // hozir yozilayotgan gap bo'lagi
+let preroll = [];          // gap boshlanishidan oldingi ~0.3 soniya
+let tekshirilmoqda = false;
+let buyruqBoshi = 0;
+const OSTONA = 0.03;       // shu balandlikdan yuqori tovush = gap
+
+async function micOch() {
+  if (micStream) return true;
   initAudio();
-  stopWake();
   try {
-    micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
-  } catch { typewriter("Mikrofonga ruxsat berilmadi. Sozlamalardan ruxsat bering yoki yozib yuboring."); return; }
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+  } catch {
+    micStream = null;
+    typewriter("Mikrofonga ruxsat yo'q. iPhone sozlamalaridan ruxsat bering.");
+    return false;
+  }
+  if (holat === "uyqu" || holat === "oylash" || holat === "gapirish") { micYop(); return false; }
   const src = ac.createMediaStreamSource(micStream);
   micAnalyser = ac.createAnalyser(); micAnalyser.fftSize = 1024;
   micNode = ac.createScriptProcessor(4096, 1, 1);
-  micChunks = [];
-  let gapirdi = false, jimlik = 0;
-  const boshlandi = performance.now();
-  micNode.onaudioprocess = (e) => {
-    const d = e.inputBuffer.getChannelData(0);
-    micChunks.push(new Float32Array(d));
-    let s = 0; for (let i = 0; i < d.length; i += 4) s += d[i] * d[i];
-    const rms = Math.sqrt(s / (d.length / 4));
-    const now = performance.now();
-    if (rms > 0.035) { gapirdi = true; jimlik = 0; }
-    else if (gapirdi) { if (!jimlik) jimlik = now; else if (now - jimlik > JIMLIK_MS) setTimeout(stopMic, 0); }
-    if (!gapirdi && now - boshlandi > 7000) setTimeout(() => stopMic(true), 0); // hech narsa demadi
-  };
+  micNode.onaudioprocess = onMic;
   const mute = ac.createGain(); mute.gain.value = 0;
   src.connect(micAnalyser); src.connect(micNode); micNode.connect(mute); mute.connect(ac.destination);
-  setHolat("tinglash");
-  signal(true);
-  typewriter("", 0, " ");
-  micTimer = setTimeout(stopMic, 30000);
+  return true;
 }
-function stopMic(bekor) {
-  clearTimeout(micTimer);
-  if (!micNode) return;
-  micNode.disconnect(); micNode.onaudioprocess = null; micNode = null;
+function micYop() {
+  if (!micStream) return;
+  try { if (micNode) micNode.disconnect(); } catch {}
+  if (micNode) micNode.onaudioprocess = null;
+  micNode = null; micAnalyser = null;
   micStream.getTracks().forEach((t) => t.stop());
-  micAnalyser = null;
-  const wav = toWav(micChunks, ac.sampleRate, 16000);
-  micChunks = [];
-  if (bekor === true || wav.seconds < 0.4) { setHolat("kutish"); typewriter(""); return; }
-  signal(false);
-  send({ audio: wav.b64, mime: "audio/wav" });
+  micStream = null; seg = null; preroll = [];
 }
 
-// qisqa signal: yuqoriga = tinglay boshladim, pastga = qabul qildim
+function onMic(e) {
+  const d = new Float32Array(e.inputBuffer.getChannelData(0));
+  const buyruq = holat === "tinglash";
+  if (!buyruq && !(holat === "kutish" && !tekshirilmoqda)) { seg = null; preroll = []; return; }
+  let s = 0; for (let i = 0; i < d.length; i += 4) s += d[i] * d[i];
+  const rms = Math.sqrt(s / (d.length / 4));
+  const now = performance.now();
+  if (!seg) {
+    if (rms > OSTONA) { seg = { chunks: [...preroll, d], start: now, last: now, loud: 1 }; preroll = []; }
+    else {
+      preroll.push(d); if (preroll.length > 4) preroll.shift();
+      if (buyruq && now - buyruqBoshi > 8000) { setHolat("kutish"); typewriter(""); } // hech narsa demadi
+    }
+    return;
+  }
+  seg.chunks.push(d);
+  if (rms > OSTONA) { seg.last = now; seg.loud++; }
+  if (now - seg.last > (buyruq ? JIMLIK_MS : 650) || now - seg.start > (buyruq ? 30000 : 12000)) gapTugadi();
+}
+function gapTugadi() {
+  const bo = seg; seg = null;
+  if (!bo || bo.loud < 3) return;            // qisqa shovqin — e'tiborsiz
+  const wav = toWav(bo.chunks, ac.sampleRate, 16000);
+  if (holat === "tinglash") { signal(false); send({ audio: wav.b64, mime: "audio/wav" }); }
+  else tekshir(wav.b64);
+}
+// eshitilgan gapda "Viki" bormi — serverda tekshiriladi
+async function tekshir(b64) {
+  tekshirilmoqda = true;
+  try {
+    const r = await api({ action: "tekshir", audio: b64, mime: "audio/wav" });
+    if (holat !== "kutish" || !r.chaqirildi) return;
+    if (r.buyruq) { signal(true); send({ text: r.buyruq }); }   // "Viki, ..." — darrov javob
+    else buyruqRejimi();                                         // faqat "Viki" — savolni kutadi
+  } catch {} finally { tekshirilmoqda = false; }
+}
+function buyruqRejimi() {
+  seg = null; preroll = []; buyruqBoshi = performance.now();
+  setHolat("tinglash"); signal(true); typewriter("", 0, " ");
+}
+function stopMic(bekor) {
+  if (holat !== "tinglash") return;
+  if (bekor === true || !seg) { seg = null; setHolat("kutish"); typewriter(""); return; }
+  gapTugadi();
+}
+
+// qisqa signal: yuqoriga = tinglayapman, pastga = qabul qildim
 function signal(boshla) {
   if (!ac) return;
   const o = ac.createOscillator(), gn = ac.createGain(), t = ac.currentTime;
@@ -568,33 +603,6 @@ function signal(boshla) {
   o.connect(gn); gn.connect(ac.destination); o.start(t); o.stop(t + 0.2);
 }
 
-// ----- "Viki" so'zini doimiy kutish -----
-const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-let rec = null, wakeOn = true;
-function startWake() {
-  if (!SR || !wakeOn || rec || holat !== "kutish" || document.hidden) return;
-  try {
-    rec = new SR();
-    rec.lang = TANISH_TILI; rec.continuous = true; rec.interimResults = true;
-    rec.onresult = (e) => {
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        if (UYGOTISH_SOZI.test(e.results[i][0].transcript)) { stopWake(); startMic(); return; }
-      }
-    };
-    rec.onerror = (e) => {
-      if (e.error === "not-allowed" || e.error === "service-not-allowed") {
-        wakeOn = false; typewriter("\"Viki\" so'zini tinglashga ruxsat yo'q. Mikrofon tugmasidan foydalaning.");
-      }
-    };
-    rec.onend = () => { rec = null; if (holat === "kutish") setTimeout(startWake, 400); };
-    rec.start();
-  } catch { rec = null; }
-}
-function stopWake() {
-  if (!rec) return;
-  const r = rec; rec = null; r.onend = null;
-  try { r.abort(); } catch {}
-}
 function toWav(chunks, inRate, outRate) {
   let len = 0; chunks.forEach((c) => len += c.length);
   const all = new Float32Array(len); let o = 0; chunks.forEach((c) => { all.set(c, o); o += c.length; });
@@ -615,14 +623,36 @@ function toWav(chunks, inRate, outRate) {
 }
 
 // ======================= SUHBAT =======================
+// Javobni bo'laklab ovozga aylantirish: birinchi gap darrov yangraydi,
+// qolgani shu vaqt ichida tayyorlanadi
+function bolakla(text) {
+  const gaplar = text.match(/[^.!?]+[.!?]+["')]*\s*|[^.!?]+$/g) || [text];
+  let birinchi = gaplar.shift();
+  while (birinchi.length < 25 && gaplar.length) birinchi += gaplar.shift();
+  const qolgan = gaplar.join("").trim();
+  return qolgan ? [birinchi.trim(), qolgan] : [birinchi.trim()];
+}
+async function gapir(text) {
+  if (!text) return;
+  const bolaklar = bolakla(text);
+  const ovozlar = bolaklar.map((b) => api({ action: "gapir", text: b }).then((r) => r.audio).catch(() => null));
+  let from = 0;
+  for (let i = 0; i < bolaklar.length; i++) {
+    const shown = text.slice(0, text.indexOf(bolaklar[i]) + bolaklar[i].length);
+    const audio = await ovozlar[i];
+    if (holat === "uyqu") return;
+    if (audio) await play(audio, shown, from); else typewriter(shown);
+    from = shown.length;
+  }
+}
+
 async function send(payload) {
   setHolat("oylash");
   if (payload.text) typewriter("", 0, payload.text);
   try {
-    const r = await api({ action: "chat", ...payload });
+    const r = await api({ action: "chat", ...payload, ovozsiz: true });
     if (r.eshitildi) typewriter("", 0, r.eshitildi);
-    if (r.audio) await play(r.audio, r.javob);
-    else typewriter(r.javob);
+    await gapir(r.javob);
   } catch (e) {
     if (e.message !== "parol") typewriter("Xatolik: " + e.message);
   }
@@ -636,12 +666,13 @@ async function wake() {
   setHolat("uygonish");
   $("subtitr").innerHTML = "";
   ekranniYoqiqTut();
+  micOch();   // ruxsat shu bosishda so'raladi
   // ilova ochilganda faqat bir marta salomlashadi (ovoz telefonda saqlanadi)
   let salom = null;
   if (!salomlashdi) {
-    salom = store.get("viki_salom2");
+    salom = store.get("viki_salom3");
     if (!salom) {
-      try { salom = (await api({ action: "gapir", text: SALOM })).audio; if (salom) store.set("viki_salom2", salom); } catch {}
+      try { salom = (await api({ action: "gapir", text: SALOM })).audio; if (salom) store.set("viki_salom3", salom); } catch {}
     }
   }
   const kut = 3300 - (performance.now() - wakeStart);
@@ -661,8 +692,8 @@ async function ekranniYoqiqTut() {
   try { wakeLock = await navigator.wakeLock?.request("screen"); } catch {}
 }
 document.addEventListener("visibilitychange", () => {
-  if (document.hidden) stopWake();
-  else if (holat !== "uyqu") { ekranniYoqiqTut(); if (holat === "kutish") startWake(); }
+  if (document.hidden) { micYop(); if (holat === "tinglash") setHolat("kutish"); }
+  else if (holat !== "uyqu") { ekranniYoqiqTut(); if (holat === "kutish") micOch(); }
 });
 
 // ======================= KIRISH =======================
@@ -681,7 +712,7 @@ $("kirishForma").onsubmit = async (e) => {
 // ======================= BOSHQARUV =======================
 cv.addEventListener("click", wake);
 $("uygot").addEventListener("click", wake);
-$("mik").onclick = () => { initAudio(); if (holat === "tinglash") stopMic(); else if (holat === "kutish") startMic(); };
+$("mik").onclick = async () => { initAudio(); if (holat === "tinglash") stopMic(); else if (holat === "kutish" && await micOch()) buyruqRejimi(); };
 $("klaviatura").onclick = () => { $("yozish").classList.toggle("ochiq"); if ($("yozish").classList.contains("ochiq")) $("matn").focus(); };
 $("uxla").onclick = () => { if (playing) try { playing.stop(); } catch {} stopMic(true); setHolat("uyqu"); try { wakeLock?.release(); } catch {} $("subtitr").innerHTML = ""; $("yozish").classList.remove("ochiq"); };
 const yubor = () => { const t = $("matn").value.trim(); if (!t || holat !== "kutish") return; $("matn").value = ""; $("matn").blur(); initAudio(); send({ text: t }); };
