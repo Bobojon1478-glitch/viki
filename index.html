@@ -120,10 +120,11 @@
 // ======================= SOZLAMALAR =======================
 const API_URL = "https://sgzewmemzivdzwybfucb.supabase.co/functions/v1/viki";
 const OVOZ = {
-  tezlik: 1,        // 1 = tabiiy tezlik
-  bas: 0,           // 0 = effektsiz, tabiiy ovoz
-  aksSado: 0,       // 0 = aks-sadosiz
+  tezlik: 0.93,     // 1 dan kichik = pastroq va yo'g'onroq ovoz
+  bas: 8,           // past chastotalarni kuchaytirish (dB)
+  aksSado: 0.22,    // aks-sado miqdori (0 = yo'q, 0.5 = ko'p)
 };
+const SALOM = "Assalomu alaykum, Islombek.";
 // "Viki" so'zini tanish (rus va ingliz tanib olish tizimlari uchun)
 const UYGOTISH_SOZI = /(в[иы]к[иы])|(v[iy]c?k(y|i|ie|ey|ee))|(wi(ki|kki|cky))/i;
 const TANISH_TILI = "ru-RU";
@@ -635,9 +636,24 @@ async function wake() {
   setHolat("uygonish");
   $("subtitr").innerHTML = "";
   ekranniYoqiqTut();
-  await new Promise((r) => setTimeout(r, 3300));
-  if (holat === "uygonish") setHolat("kutish");
+  // ilova ochilganda faqat bir marta salomlashadi (ovoz telefonda saqlanadi)
+  let salom = null;
+  if (!salomlashdi) {
+    salom = store.get("viki_salom2");
+    if (!salom) {
+      try { salom = (await api({ action: "gapir", text: SALOM })).audio; if (salom) store.set("viki_salom2", salom); } catch {}
+    }
+  }
+  const kut = 3300 - (performance.now() - wakeStart);
+  if (kut > 0) await new Promise((r) => setTimeout(r, kut));
+  if (holat !== "uygonish") return;
+  if (!salomlashdi) {
+    salomlashdi = true;
+    if (salom) await play(salom, SALOM); else typewriter(SALOM);
+  }
+  setHolat("kutish");
 }
+let salomlashdi = false;
 
 // Viki uyg'oq paytda telefon ekrani o'chib qolmasin
 let wakeLock = null;
