@@ -1,0 +1,622 @@
+<!doctype html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Viki</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Viki">
+<meta name="theme-color" content="#02060c">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-192.png">
+<link rel="manifest" href="manifest.json">
+<style>
+  :root {
+    --bg: #02060c;
+    --cyan: #3fd0ff;
+    --cyan-dim: rgba(63, 208, 255, .35);
+    --gold: #ffb13b;
+    --text: #dff6ff;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+    -webkit-user-select: none; user-select: none; overscroll-behavior: none; }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+
+  .hud { position: fixed; top: calc(env(safe-area-inset-top) + 14px); left: 18px; right: 18px;
+    display: flex; justify-content: space-between; align-items: center; pointer-events: none;
+    font: 600 11px/1 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: .22em; color: var(--cyan); opacity: .85; }
+  .hud .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--cyan);
+    box-shadow: 0 0 8px var(--cyan); margin-right: 8px; vertical-align: middle; }
+  .hud .holat { color: #8fdfff; opacity: .75; }
+
+  .subtitr { position: fixed; left: 20px; right: 20px; bottom: calc(env(safe-area-inset-bottom) + 132px);
+    text-align: center; font-size: 19px; line-height: 1.4; font-weight: 500; min-height: 1.4em;
+    text-shadow: 0 0 14px rgba(63,208,255,.55); pointer-events: none; }
+  .subtitr .men { display: block; font-size: 14px; color: #7fb8cc; margin-bottom: 8px; font-weight: 400; }
+
+  .panel { position: fixed; left: 0; right: 0; bottom: calc(env(safe-area-inset-bottom) + 26px);
+    display: flex; justify-content: center; align-items: center; gap: 34px; transition: opacity .6s; }
+  .panel.yashirin { opacity: 0; pointer-events: none; }
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+  .kichik { width: 46px; height: 46px; border-radius: 50%; border: 1px solid var(--cyan-dim);
+    display: grid; place-items: center; color: var(--cyan); background: rgba(8, 24, 36, .55); }
+  .kichik svg { width: 20px; height: 20px; }
+  .mik { width: 76px; height: 76px; border-radius: 50%; position: relative; display: grid; place-items: center;
+    border: 1.5px solid var(--cyan); color: var(--cyan); background: radial-gradient(circle, rgba(63,208,255,.18), rgba(2,6,12,.6) 70%);
+    box-shadow: 0 0 22px rgba(63,208,255,.35), inset 0 0 18px rgba(63,208,255,.25); transition: transform .15s, box-shadow .3s; }
+  .mik svg { width: 30px; height: 30px; }
+  .mik:active { transform: scale(.94); }
+  .mik.faol { border-color: var(--gold); color: var(--gold);
+    box-shadow: 0 0 34px rgba(255,160,50,.55), inset 0 0 20px rgba(255,160,50,.3); }
+  .mik.band { opacity: .45; pointer-events: none; }
+
+  .yozish { position: fixed; left: 14px; right: 14px; bottom: calc(env(safe-area-inset-bottom) + 118px);
+    display: none; gap: 8px; }
+  .yozish.ochiq { display: flex; }
+  .yozish input { flex: 1; min-width: 0; padding: 13px 16px; border-radius: 24px; border: 1px solid var(--cyan-dim);
+    background: rgba(6, 20, 30, .85); color: var(--text); font-size: 16px; outline: none; -webkit-user-select: text; user-select: text; }
+  .yozish input:focus { border-color: var(--cyan); }
+  .yozish button { padding: 0 18px; border-radius: 24px; background: var(--cyan); color: #02101a; font-weight: 700; }
+
+  .ekran { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(2,6,12,.92); z-index: 10; padding: 24px; }
+  .ekran[hidden] { display: none; }
+  .kirish { width: 100%; max-width: 320px; text-align: center; }
+  .kirish h1 { font: 700 34px/1 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: .4em; color: var(--cyan);
+    text-shadow: 0 0 20px var(--cyan); margin: 0 0 8px; padding-left: .4em; }
+  .kirish p { color: #7fb8cc; margin: 0 0 28px; font-size: 14px; }
+  .kirish input { width: 100%; padding: 14px 16px; border-radius: 14px; border: 1px solid var(--cyan-dim);
+    background: rgba(6,20,30,.9); color: var(--text); font-size: 17px; text-align: center; outline: none;
+    -webkit-user-select: text; user-select: text; }
+  .kirish button { width: 100%; margin-top: 12px; padding: 14px; border-radius: 14px; background: var(--cyan);
+    color: #02101a; font-weight: 700; font-size: 16px; }
+  .kirish .xato { color: #ff8a7a; min-height: 1.3em; margin-top: 12px; font-size: 14px; }
+
+  .uygot { position: fixed; left: 0; right: 0; bottom: calc(env(safe-area-inset-bottom) + 60px); text-align: center;
+    font: 500 12px/1 ui-monospace, Menlo, monospace; letter-spacing: .3em; color: var(--cyan); opacity: .6;
+    animation: miltil 2.4s ease-in-out infinite; pointer-events: none; }
+  .uygot[hidden] { display: none; }
+  @keyframes miltil { 50% { opacity: .2; } }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div class="hud"><span><span class="dot"></span>VIKI</span><span class="holat" id="holat">UYQUDA</span></div>
+<div class="subtitr" id="subtitr"></div>
+<div class="uygot" id="uygot">UYG'OTISH UCHUN BOSING</div>
+
+<div class="yozish" id="yozish">
+  <input id="matn" placeholder="Viki'ga yozing..." autocomplete="off" enterkeyhint="send">
+  <button id="yubor">➤</button>
+</div>
+
+<div class="panel yashirin" id="panel">
+  <button class="kichik" id="klaviatura" aria-label="Yozish">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2.5" y="6" width="19" height="12" rx="2"/><path d="M6 10h.01M9.5 10h.01M13 10h.01M16.5 10h.01M7.5 14h9"/></svg>
+  </button>
+  <button class="mik" id="mik" aria-label="Gapirish">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg>
+  </button>
+  <button class="kichik" id="uxla" aria-label="Uxlatish">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5Z"/></svg>
+  </button>
+</div>
+
+<div class="ekran" id="kirishEkran" hidden>
+  <form class="kirish" id="kirishForma">
+    <h1>VIKI</h1>
+    <p>Shaxsiy yordamchi</p>
+    <input id="parol" type="password" placeholder="Parol" autocomplete="current-password">
+    <button type="submit">Kirish</button>
+    <div class="xato" id="kirishXato"></div>
+  </form>
+</div>
+
+<script>
+// ======================= SOZLAMALAR =======================
+const API_URL = "https://sgzewmemzivdzwybfucb.supabase.co/functions/v1/viki";
+const OVOZ = {
+  tezlik: 0.93,     // 1 dan kichik = pastroq va yo'g'onroq ovoz
+  bas: 8,           // past chastotalarni kuchaytirish (dB)
+  aksSado: 0.22,    // aks-sado miqdori (0 = yo'q, 0.5 = ko'p)
+};
+const SALOM = "Assalomu alaykum, Islombek. Men tayyorman. Sizni tinglayman.";
+
+// ======================= YORDAMCHILAR =======================
+const $ = (id) => document.getElementById(id);
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+  del(k) { try { localStorage.removeItem(k); } catch {} },
+};
+let parol = store.get("viki_parol");
+
+async function api(body) {
+  const r = await fetch(API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-viki-parol": parol || "" },
+    body: JSON.stringify(body),
+  });
+  const data = await r.json().catch(() => ({}));
+  if (r.status === 401) { chiqish(); throw new Error("parol"); }
+  if (!r.ok) throw new Error(data.xato || ("Server xatosi " + r.status));
+  return data;
+}
+
+// ======================= HOLAT =======================
+let holat = "uyqu"; // uyqu | uygonish | kutish | tinglash | oylash | gapirish
+const HOLAT_NOMI = { uyqu: "UYQUDA", uygonish: "UYG'ONMOQDA", kutish: "TAYYOR", tinglash: "TINGLAYAPMAN", oylash: "O'YLAYAPMAN", gapirish: "GAPIRYAPMAN" };
+function setHolat(h) {
+  holat = h;
+  $("holat").textContent = HOLAT_NOMI[h];
+  $("mik").classList.toggle("faol", h === "tinglash");
+  $("mik").classList.toggle("band", h === "oylash" || h === "gapirish" || h === "uygonish");
+  $("panel").classList.toggle("yashirin", h === "uyqu" || h === "uygonish");
+  $("uygot").hidden = h !== "uyqu";
+}
+
+// ======================= GRAFIKA =======================
+const cv = $("c"), g = cv.getContext("2d");
+let W, H, DPR, U, CX, CY, layer;
+let amp = 0, ampSmooth = 0;          // ovoz balandligi (0..1)
+let wakeStart = 0;                    // uyg'onish boshlangan vaqt
+let rings = [], lastRing = 0;
+let particles = [];
+let outlineR = [];                    // o'ng yarim kontur (U birliklarida)
+
+const lerp = (a, b, t) => a + (b - a) * t;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const ease = (t) => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+const P = (x, y) => [CX + x * U, CY + y * U];
+
+// Bosh shakli: yarim kenglik y bo'yicha
+const HEAD = { cy: -0.40, rx: 0.17, ry: 0.222 };
+function headHalfWidth(y) {
+  const d = (y - HEAD.cy) / HEAD.ry;
+  if (Math.abs(d) >= 1) return 0;
+  let w = HEAD.rx * Math.sqrt(1 - d * d);
+  if (d > 0) w *= 1 - 0.34 * Math.pow(d, 1.5);
+  else w *= 1 - 0.06 * Math.pow(-d, 3);   // jag' torayadi
+  return w;
+}
+function bez(p0, p1, p2, p3, n) {
+  const out = [];
+  for (let i = 0; i <= n; i++) {
+    const t = i / n, u = 1 - t;
+    out.push([
+      u*u*u*p0[0] + 3*u*u*t*p1[0] + 3*u*t*t*p2[0] + t*t*t*p3[0],
+      u*u*u*p0[1] + 3*u*u*t*p1[1] + 3*u*t*t*p2[1] + t*t*t*p3[1],
+    ]);
+  }
+  return out;
+}
+function buildOutline() {
+  const pts = [];
+  // bosh: tepadan jag'gacha
+  for (let i = 0; i <= 60; i++) {
+    const a = -Math.PI / 2 + (i / 60) * (Math.PI / 2 + 1.02);
+    const y = HEAD.cy + Math.sin(a) * HEAD.ry;
+    pts.push([headHalfWidth(y) || 0.0001, y]);
+  }
+  const last = pts[pts.length - 1];
+  // jag' -> bo'yin -> yelka
+  pts.push(...bez(last, [0.095, -0.185], [0.084, -0.15], [0.086, -0.11], 10));
+  pts.push(...bez([0.086, -0.11], [0.088, -0.04], [0.14, -0.005], [0.27, 0.02], 16));
+  pts.push(...bez([0.27, 0.02], [0.37, 0.04], [0.43, 0.10], [0.44, 0.30], 16));
+  return pts;
+}
+const shoulderCurve = (s) => [
+  ...bez([0.086, -0.11 + s * 0.2], [0.088, -0.04 + s], [0.14 - s * 0.5, -0.005 + s], [0.27 - s * 0.9, 0.02 + s], 14),
+  ...bez([0.27 - s * 0.9, 0.02 + s], [0.37 - s * 1.1, 0.04 + s], [0.43 - s * 1.2, 0.10 + s], [0.44 - s * 1.2, 0.30], 14),
+];
+
+function resize() {
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = innerWidth; H = innerHeight;
+  cv.width = W * DPR; cv.height = H * DPR;
+  g.setTransform(DPR, 0, 0, DPR, 0, 0);
+  U = Math.min(W * 1.05, H * 0.62);
+  CX = W / 2; CY = H * 0.47;
+  outlineR = buildOutline();
+  buildLayer();
+  buildParticles();
+}
+
+// Statik neon qatlam (bir marta chiziladi — telefon uchun tejamkor)
+function buildLayer() {
+  layer = document.createElement("canvas");
+  layer.width = W * DPR; layer.height = H * DPR;
+  const c = layer.getContext("2d");
+  c.setTransform(DPR, 0, 0, DPR, 0, 0);
+  c.lineCap = "round"; c.lineJoin = "round";
+
+  const path = (pts, mirror) => {
+    c.beginPath();
+    pts.forEach(([x, y], i) => { const [px, py] = P(mirror ? -x : x, y); i ? c.lineTo(px, py) : c.moveTo(px, py); });
+  };
+
+  // 1) boshdagi gorizontal kontur chiziqlar (3D hissi)
+  for (let y = HEAD.cy - HEAD.ry + 0.012; y < -0.17; y += 0.0105) {
+    const w = headHalfWidth(y); if (w < 0.01) continue;
+    const [x0, yy] = P(-w, y), [x1] = P(w, y);
+    const gr = c.createLinearGradient(x0, 0, x1, 0);
+    gr.addColorStop(0, "rgba(90,210,255,.75)");
+    gr.addColorStop(.22, "rgba(60,170,240,.22)");
+    gr.addColorStop(.5, "rgba(60,150,230,.10)");
+    gr.addColorStop(.78, "rgba(60,170,240,.22)");
+    gr.addColorStop(1, "rgba(90,210,255,.75)");
+    c.strokeStyle = gr; c.lineWidth = 1;
+    c.beginPath();
+    for (let i = 0; i <= 40; i++) {
+      const t = i / 40 * 2 - 1;
+      const px = CX + t * w * U, py = yy + Math.sqrt(1 - t * t) * 0.012 * U;
+      i ? c.lineTo(px, py) : c.moveTo(px, py);
+    }
+    c.stroke();
+  }
+
+  // 2) yelkadagi parallel chiziqlar
+  for (let i = 1; i <= 11; i++) {
+    const s = i * 0.016;
+    c.strokeStyle = `rgba(70,190,255,${0.42 - i * 0.03})`; c.lineWidth = 1;
+    for (const m of [false, true]) { path(shoulderCurve(s), m); c.stroke(); }
+  }
+
+  // 3) bo'yindagi oltin "tomirlar"
+  c.strokeStyle = "rgba(255,170,60,.55)"; c.lineWidth = 1.1;
+  const vein = (x0, y0, dx, len, depth) => {
+    let x = x0, y = y0;
+    c.beginPath(); c.moveTo(...P(x, y));
+    for (let k = 0; k < 8; k++) { x += dx / 8 + Math.sin(k * 1.7 + x0 * 40) * 0.004; y += len / 8; c.lineTo(...P(x, y)); }
+    c.stroke();
+    if (depth > 0) { vein(x, y, dx * 1.8 + 0.02, len * 0.6, depth - 1); vein(x, y, dx * 1.8 - 0.02, len * 0.6, depth - 1); }
+  };
+  vein(0, -0.16, 0, 0.08, 2); vein(-0.02, -0.14, -0.01, 0.07, 1); vein(0.02, -0.14, 0.01, 0.07, 1);
+
+  // 4) asosiy neon kontur (bir necha qatlam nur)
+  for (const [blur, width, alpha] of [[26, 3, .5], [12, 2, .8], [0, 1.4, 1]]) {
+    c.shadowBlur = blur; c.shadowColor = "rgba(40,190,255,1)";
+    c.strokeStyle = `rgba(120,225,255,${alpha})`; c.lineWidth = width;
+    for (const m of [false, true]) { path(outlineR, m); c.stroke(); }
+  }
+  c.shadowBlur = 0;
+}
+
+function buildParticles() {
+  particles = [];
+  const N = W < 500 ? 1100 : 1700;
+  const pick = (arr) => arr[(Math.random() * arr.length) | 0];
+  for (let i = 0; i < N; i++) {
+    const r = Math.random();
+    let tx, ty, kind;
+    if (r < 0.45) {                       // kontur atrofida
+      const [x, y] = pick(outlineR);
+      const off = (Math.random() ** 2) * 0.03;
+      tx = (x + off) * (Math.random() < .5 ? -1 : 1); ty = y - off * 0.3; kind = 0;
+    } else if (r < 0.8) {                 // bosh ichida
+      const y = HEAD.cy - HEAD.ry + Math.random() * (HEAD.ry * 1.75);
+      const w = headHalfWidth(y);
+      tx = (Math.random() * 2 - 1) * w; ty = y; kind = 1;
+    } else {                              // tepadagi uchqunlar (aura)
+      const a = -Math.PI / 2 + (Math.random() - .5) * 2.2;
+      const rad = HEAD.ry * (1.02 + Math.random() * 0.35);
+      tx = Math.cos(a) * rad * 0.75; ty = HEAD.cy + Math.sin(a) * rad; kind = 2;
+    }
+    particles.push({
+      tx, ty, kind,
+      delay: Math.random() * 0.9,
+      ph: Math.random() * Math.PI * 2,
+      sz: kind === 2 ? 0.6 + Math.random() * 1.1 : 0.7 + Math.random() * 1.2,
+      sp: 0.5 + Math.random() * 1.5,
+    });
+  }
+}
+
+function drawCore(t, level) {
+  const [hx, hy] = P(0, HEAD.cy + 0.01);
+  const R = U * (0.105 + level * 0.05);
+  g.save();
+  g.globalCompositeOperation = "lighter";
+  const gr = g.createRadialGradient(hx, hy, 0, hx, hy, R * 1.25);
+  gr.addColorStop(0, "rgba(255,245,200,.95)");
+  gr.addColorStop(.3, "rgba(255,185,70,.85)");
+  gr.addColorStop(.65, "rgba(255,110,20,.38)");
+  gr.addColorStop(1, "rgba(255,80,0,0)");
+  g.fillStyle = gr;
+  g.beginPath(); g.ellipse(hx, hy, R * 1.25, R * 1.35, 0, 0, Math.PI * 2); g.fill();
+
+  // yadro ichidagi to'lqin chiziqlar
+  g.beginPath(); g.ellipse(hx, hy, R * 1.05, R * 1.15, 0, 0, Math.PI * 2); g.clip();
+  const speed = holat === "oylash" ? 6 : 2.2;
+  for (let i = -6; i <= 6; i++) {
+    const y0 = hy + i * R * 0.15;
+    g.beginPath();
+    for (let k = 0; k <= 30; k++) {
+      const x = hx - R + (k / 30) * 2 * R;
+      const y = y0 + Math.sin(k * 0.55 + t * speed + i * 0.8) * U * (0.004 + level * 0.022);
+      k ? g.lineTo(x, y) : g.moveTo(x, y);
+    }
+    g.strokeStyle = `rgba(255,${200 - Math.abs(i) * 12},90,${0.55 - Math.abs(i) * 0.05})`;
+    g.lineWidth = 1.3; g.stroke();
+  }
+  g.restore();
+}
+
+function frame(ms) {
+  const t = ms / 1000;
+  g.clearRect(0, 0, W, H);
+  // fon: yengil ko'k tuman
+  const bg = g.createRadialGradient(CX, CY - U * .3, 0, CX, CY - U * .3, U * 1.1);
+  bg.addColorStop(0, "rgba(10,40,70,.35)"); bg.addColorStop(1, "rgba(2,6,12,0)");
+  g.fillStyle = bg; g.fillRect(0, 0, W, H);
+
+  // ovoz darajasi
+  let target = 0;
+  if (holat === "gapirish" && outAnalyser) target = level(outAnalyser) * 1.6;
+  else if (holat === "tinglash" && micAnalyser) target = level(micAnalyser) * 2.2;
+  else if (holat === "oylash") target = 0.12 + 0.06 * Math.sin(t * 5);
+  else target = 0.05 + 0.03 * Math.sin(t * 1.3);
+  amp = clamp(target, 0, 1);
+  ampSmooth = lerp(ampSmooth, amp, amp > ampSmooth ? 0.35 : 0.08);
+
+  const [ox, oy] = P(0, 0.27);  // uyqudagi nuqta
+
+  if (holat === "uyqu") {
+    const pulse = 0.6 + 0.4 * Math.sin(t * 2);
+    const gl = g.createRadialGradient(ox, oy, 0, ox, oy, 38);
+    gl.addColorStop(0, `rgba(200,245,255,${pulse})`); gl.addColorStop(.3, `rgba(60,200,255,${pulse * .6})`); gl.addColorStop(1, "rgba(0,120,255,0)");
+    g.fillStyle = gl; g.beginPath(); g.arc(ox, oy, 38, 0, Math.PI * 2); g.fill();
+    requestAnimationFrame(frame); return;
+  }
+
+  const wt = holat === "uygonish" ? (ms - wakeStart) / 1000 : 99;
+  const layerAlpha = clamp((wt - 1.2) / 1.2, 0, 1);
+
+  // to'lqin halqalar (gapirganda)
+  if (holat === "gapirish" && ampSmooth > 0.12 && t - lastRing > 0.32) { rings.push({ t0: t, a: ampSmooth }); lastRing = t; }
+  const [hx, hy] = P(0, HEAD.cy);
+  rings = rings.filter((r) => t - r.t0 < 1.8);
+  for (const r of rings) {
+    const k = (t - r.t0) / 1.8;
+    g.strokeStyle = `rgba(63,200,255,${(1 - k) * 0.28 * (0.5 + r.a)})`; g.lineWidth = 1.2;
+    g.beginPath(); g.ellipse(hx, hy + U * 0.05, U * (0.2 + k * 0.45), U * (0.26 + k * 0.5), 0, 0, Math.PI * 2); g.stroke();
+  }
+
+  // neon qatlam
+  if (layerAlpha > 0) {
+    g.globalAlpha = layerAlpha * clamp(0.82 + ampSmooth * 0.5 + 0.06 * Math.sin(t * 1.7), 0, 1);
+    g.drawImage(layer, 0, 0, W, H);
+    g.globalAlpha = 1;
+  }
+
+  // zarrachalar
+  g.globalCompositeOperation = "lighter";
+  for (const p of particles) {
+    let x, y, a;
+    const jit = 0.0025 + ampSmooth * (p.kind === 1 ? 0.004 : 0.01);
+    const bx = p.tx + Math.sin(t * p.sp + p.ph) * jit;
+    const by = p.ty + Math.cos(t * p.sp * 1.3 + p.ph) * jit - (p.kind === 2 ? ((t * 0.02 * p.sp + p.ph) % 0.06) : 0);
+    if (wt < 3.2) {
+      const q = ease(clamp((wt - p.delay) / 1.9, 0, 1));
+      const ang = (1 - q) * 9 + p.ph;
+      const rad = (1 - q) * (0.18 + p.sp * 0.08) * Math.sin(q * Math.PI + 0.3);
+      x = lerp(0, bx, q) + Math.cos(ang) * rad;
+      y = lerp(0.27, by, q) + Math.sin(ang) * rad * 0.55;
+      a = q === 0 ? 0.25 : 0.9;
+    } else { x = bx; y = by; a = p.kind === 1 ? 0.35 : p.kind === 2 ? 0.45 + 0.4 * Math.sin(t * 2 + p.ph) : 0.8; }
+    const [px, py] = P(x, y);
+    g.fillStyle = p.kind === 1 && Math.abs(y - HEAD.cy) < 0.12 && Math.abs(x) < 0.1
+      ? `rgba(255,190,90,${a * 0.9})` : `rgba(90,215,255,${a})`;
+    g.fillRect(px, py, p.sz, p.sz);
+  }
+  g.globalCompositeOperation = "source-over";
+
+  // yelka pastini silliq so'ndirish
+  const [, fy0] = P(0, 0.17), [, fy1] = P(0, 0.31);
+  const fade = g.createLinearGradient(0, fy0, 0, fy1);
+  fade.addColorStop(0, "rgba(2,6,12,0)"); fade.addColorStop(1, "rgba(2,6,12,1)");
+  g.fillStyle = fade; g.fillRect(0, fy0, W, H - fy0);
+
+  // yadro
+  const coreIn = clamp((wt - 1.0) / 1.5, 0, 1);
+  if (coreIn > 0) { g.globalAlpha = coreIn; drawCore(t, ampSmooth); g.globalAlpha = 1; }
+
+  // pastdagi nuqta uyg'onish paytida
+  if (wt < 3) {
+    const f = 1 - clamp(wt / 3, 0, 1);
+    const gl = g.createRadialGradient(ox, oy, 0, ox, oy, 30);
+    gl.addColorStop(0, `rgba(220,250,255,${f})`); gl.addColorStop(1, "rgba(0,120,255,0)");
+    g.fillStyle = gl; g.beginPath(); g.arc(ox, oy, 30, 0, Math.PI * 2); g.fill();
+  }
+  if (holat === "uygonish" && wt > 3.2) setHolat("kutish");
+  requestAnimationFrame(frame);
+}
+
+// ======================= AUDIO =======================
+let ac, outAnalyser, micAnalyser, outInput, playing = null;
+const buf = new Uint8Array(1024);
+function level(an) {
+  an.getByteTimeDomainData(buf);
+  let s = 0; for (let i = 0; i < buf.length; i++) { const v = (buf[i] - 128) / 128; s += v * v; }
+  return Math.sqrt(s / buf.length) * 3;
+}
+function initAudio() {
+  if (ac) { if (ac.state !== "running") ac.resume(); return; }
+  ac = new (window.AudioContext || window.webkitAudioContext)();
+  outAnalyser = ac.createAnalyser(); outAnalyser.fftSize = 1024;
+  // effektlar zanjiri: bas -> issiqlik -> kompressor -> (quruq + aks-sado)
+  const bass = ac.createBiquadFilter(); bass.type = "lowshelf"; bass.frequency.value = 180; bass.gain.value = OVOZ.bas;
+  const warm = ac.createBiquadFilter(); warm.type = "highshelf"; warm.frequency.value = 4500; warm.gain.value = -3;
+  const comp = ac.createDynamicsCompressor(); comp.threshold.value = -18; comp.ratio.value = 3;
+  const conv = ac.createConvolver(); conv.buffer = impulse(1.7, 2.6);
+  const wet = ac.createGain(); wet.gain.value = OVOZ.aksSado;
+  bass.connect(warm); warm.connect(comp);
+  comp.connect(outAnalyser); comp.connect(conv); conv.connect(wet); wet.connect(outAnalyser);
+  outAnalyser.connect(ac.destination);
+  outInput = bass;
+}
+function impulse(sec, decay) {
+  const len = ac.sampleRate * sec, b = ac.createBuffer(2, len, ac.sampleRate);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = b.getChannelData(ch);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, decay);
+  }
+  return b;
+}
+function pcmToBuffer(b64) {
+  const bin = atob(b64), n = bin.length >> 1;
+  const ab = ac.createBuffer(1, n, 24000), d = ab.getChannelData(0);
+  for (let i = 0; i < n; i++) {
+    let v = bin.charCodeAt(i * 2) | (bin.charCodeAt(i * 2 + 1) << 8);
+    if (v >= 32768) v -= 65536;
+    d[i] = v / 32768;
+  }
+  return ab;
+}
+function play(b64, text) {
+  return new Promise((resolve) => {
+    initAudio();
+    const src = ac.createBufferSource();
+    src.buffer = pcmToBuffer(b64);
+    src.playbackRate.value = OVOZ.tezlik;
+    src.connect(outInput);
+    const dur = src.buffer.duration / OVOZ.tezlik;
+    setHolat("gapirish");
+    typewriter(text, dur);
+    src.onended = () => { playing = null; resolve(); };
+    playing = src; src.start();
+  });
+}
+let twTimer;
+function typewriter(text, dur, men) {
+  clearInterval(twTimer);
+  const el = $("subtitr");
+  const head = men ? `<span class="men">${esc(men)}</span>` : (el.querySelector(".men")?.outerHTML || "");
+  if (!dur) { el.innerHTML = head + esc(text); return; }
+  const t0 = performance.now();
+  twTimer = setInterval(() => {
+    const k = clamp((performance.now() - t0) / (dur * 1000 * 0.92), 0, 1);
+    el.innerHTML = head + esc(text.slice(0, Math.ceil(text.length * k)));
+    if (k >= 1) clearInterval(twTimer);
+  }, 40);
+}
+const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+// ----- mikrofon (WAV 16 kHz) -----
+let micStream, micNode, micChunks = [], micTimer;
+async function startMic() {
+  initAudio();
+  try {
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+  } catch { typewriter("Mikrofonga ruxsat berilmadi. Sozlamalardan ruxsat bering yoki yozib yuboring."); return; }
+  const src = ac.createMediaStreamSource(micStream);
+  micAnalyser = ac.createAnalyser(); micAnalyser.fftSize = 1024;
+  micNode = ac.createScriptProcessor(4096, 1, 1);
+  micChunks = [];
+  micNode.onaudioprocess = (e) => micChunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+  const mute = ac.createGain(); mute.gain.value = 0;
+  src.connect(micAnalyser); src.connect(micNode); micNode.connect(mute); mute.connect(ac.destination);
+  setHolat("tinglash");
+  typewriter("", 0, " ");
+  micTimer = setTimeout(stopMic, 30000);
+}
+function stopMic() {
+  clearTimeout(micTimer);
+  if (!micNode) return;
+  micNode.disconnect(); micNode.onaudioprocess = null; micNode = null;
+  micStream.getTracks().forEach((t) => t.stop());
+  micAnalyser = null;
+  const wav = toWav(micChunks, ac.sampleRate, 16000);
+  micChunks = [];
+  if (wav.seconds < 0.4) { setHolat("kutish"); typewriter(""); return; }
+  send({ audio: wav.b64, mime: "audio/wav" });
+}
+function toWav(chunks, inRate, outRate) {
+  let len = 0; chunks.forEach((c) => len += c.length);
+  const all = new Float32Array(len); let o = 0; chunks.forEach((c) => { all.set(c, o); o += c.length; });
+  const ratio = inRate / outRate, n = Math.floor(len / ratio);
+  const dv = new DataView(new ArrayBuffer(44 + n * 2));
+  const w = (p, s) => { for (let i = 0; i < s.length; i++) dv.setUint8(p + i, s.charCodeAt(i)); };
+  w(0, "RIFF"); dv.setUint32(4, 36 + n * 2, true); w(8, "WAVE"); w(12, "fmt ");
+  dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true);
+  dv.setUint32(24, outRate, true); dv.setUint32(28, outRate * 2, true); dv.setUint16(32, 2, true); dv.setUint16(34, 16, true);
+  w(36, "data"); dv.setUint32(40, n * 2, true);
+  for (let i = 0; i < n; i++) {
+    const s = clamp(all[Math.floor(i * ratio)], -1, 1);
+    dv.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+  }
+  const bytes = new Uint8Array(dv.buffer); let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return { b64: btoa(bin), seconds: n / outRate };
+}
+
+// ======================= SUHBAT =======================
+async function send(payload) {
+  setHolat("oylash");
+  if (payload.text) typewriter("", 0, payload.text);
+  try {
+    const r = await api({ action: "chat", ...payload });
+    if (r.eshitildi) typewriter("", 0, r.eshitildi);
+    if (r.audio) await play(r.audio, r.javob);
+    else typewriter(r.javob);
+  } catch (e) {
+    if (e.message !== "parol") typewriter("Xatolik: " + e.message);
+  }
+  setHolat("kutish");
+}
+
+async function wake() {
+  if (holat !== "uyqu") return;
+  initAudio();
+  wakeStart = performance.now();
+  setHolat("uygonish");
+  $("subtitr").innerHTML = "";
+  // salomlashish ovozi bir marta olinib, telefonda saqlanadi
+  let salom = store.get("viki_salom");
+  if (!salom) {
+    try { salom = (await api({ action: "gapir", text: SALOM })).audio; if (salom) store.set("viki_salom", salom); } catch {}
+  }
+  const kut = 3300 - (performance.now() - wakeStart);
+  if (kut > 0) await new Promise((r) => setTimeout(r, kut));
+  if (salom) await play(salom, SALOM); else typewriter(SALOM);
+  setHolat("kutish");
+}
+
+// ======================= KIRISH =======================
+function chiqish() { parol = null; store.del("viki_parol"); $("kirishEkran").hidden = false; }
+$("kirishForma").onsubmit = async (e) => {
+  e.preventDefault();
+  parol = $("parol").value.trim();
+  $("kirishXato").textContent = "Tekshirilmoqda...";
+  try {
+    await api({ action: "ping" });
+    store.set("viki_parol", parol);
+    $("kirishEkran").hidden = true; $("kirishXato").textContent = "";
+  } catch (err) { $("kirishXato").textContent = err.message === "parol" ? "Parol noto'g'ri" : "Serverga ulanib bo'lmadi"; }
+};
+
+// ======================= BOSHQARUV =======================
+cv.addEventListener("click", wake);
+$("uygot").addEventListener("click", wake);
+$("mik").onclick = () => { if (holat === "tinglash") stopMic(); else if (holat === "kutish") startMic(); };
+$("klaviatura").onclick = () => { $("yozish").classList.toggle("ochiq"); if ($("yozish").classList.contains("ochiq")) $("matn").focus(); };
+$("uxla").onclick = () => { if (playing) try { playing.stop(); } catch {} setHolat("uyqu"); $("subtitr").innerHTML = ""; $("yozish").classList.remove("ochiq"); };
+const yubor = () => { const t = $("matn").value.trim(); if (!t || holat !== "kutish") return; $("matn").value = ""; $("matn").blur(); initAudio(); send({ text: t }); };
+$("yubor").onclick = yubor;
+$("matn").onkeydown = (e) => { if (e.key === "Enter") yubor(); };
+
+addEventListener("resize", resize);
+resize();
+setHolat("uyqu");
+if (!parol) $("kirishEkran").hidden = false;
+requestAnimationFrame(frame);
+
+// Test uchun: ?demo=1 — serversiz animatsiyani ko'rish
+if (location.search.includes("demo")) { store.set("viki_parol", "demo"); $("kirishEkran").hidden = true; }
+</script>
+</body>
+</html>
